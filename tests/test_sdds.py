@@ -8,9 +8,9 @@ from typing import Dict
 import numpy as np
 import pytest
 
-from sdds.classes import (NUMTYPES, NUMTYPES_CAST, Array, Column, Data,
-                          Definition, Description, Include, Parameter,
-                          SddsFile, get_dtype_str)
+from sdds.classes import (NUMTYPES, Array, Column, Data, Definition,
+                          Description, Include, Parameter, SddsFile,
+                          get_dtype_str)
 from sdds.reader import (_gen_words, _get_def_as_dict, _read_data,
                          _read_header, _sort_definitions, gzip_open, read_sdds)
 from sdds.writer import _sdds_def_as_str, write_sdds
@@ -19,6 +19,12 @@ CURRENT_DIR = pathlib.Path(__file__).parent
 
 
 class TestReadWrite:
+    def test_empty_array(self, _sdds_file_pathlib, tmp_file):
+        original = read_sdds(_sdds_file_pathlib)
+        original.values["horPositionsConcentratedAndSorted"] = np.array([])
+        # breakpoint()
+        write_sdds(original, tmp_file)
+
     def test_sdds_write_read_pathlib_input(self, _sdds_file_pathlib, tmp_file):
         original = read_sdds(_sdds_file_pathlib)
         write_sdds(original, tmp_file)
@@ -42,7 +48,7 @@ class TestReadWrite:
 
 class TestReadGzippedFiles:
     def test_sdds_read_gzipped_file_pathlib(self, _sdds_gzipped_file_pathlib, tmp_file):
-        original = read_sdds(_sdds_gzipped_file_pathlib, opener=gzip_open)
+        original = read_sdds(_sdds_gzipped_file_pathlib, opener=gzip_open)  # type: ignore
         write_sdds(original, tmp_file)
         new = read_sdds(tmp_file)
         for definition, value in original:
@@ -52,7 +58,7 @@ class TestReadGzippedFiles:
             assert np.all(value == new_val)
 
     def test_sdds_read_gzipped_file_str(self, _sdds_gzipped_file_str, tmp_file):
-        original = read_sdds(_sdds_gzipped_file_str, opener=gzip_open)
+        original = read_sdds(_sdds_gzipped_file_str, opener=gzip_open)  # type: ignore
         write_sdds(original, tmp_file)
         new = read_sdds(tmp_file)
         for definition, value in original:
@@ -60,6 +66,7 @@ class TestReadGzippedFiles:
             assert new_def.name == definition.name
             assert new_def.type == definition.type
             assert np.all(value == new_val)
+
 
 class TestEndianness:
     def test_sdds_read_little_endian(self, _sdds_file_little_endian):
@@ -70,12 +77,12 @@ class TestEndianness:
 
     def test_sdds_read_big_endian_as_little_endian(self, _sdds_file_pathlib):
         with pytest.raises(ValueError) as e:
-            read_sdds(_sdds_file_pathlib, endianness='little')
+            read_sdds(_sdds_file_pathlib, endianness="little")
         assert "buffer size" in str(e)
 
     def test_sdds_read_little_endian_as_big_endian(self, _sdds_file_little_endian):
         with pytest.raises(struct.error) as e:
-            read_sdds(_sdds_file_little_endian, endianness='big')
+            read_sdds(_sdds_file_little_endian, endianness="big")
         assert "buffer" in str(e)
 
     def test_sdds_write_read_write_little_endian(self, _sdds_file_little_endian, tmp_file):
@@ -118,9 +125,12 @@ class TestReadFunctions:
         &end
         &data mode=binary, &end
         """
-        test_data = {"acqStamp": "double", "nbOfCapTurns": "long",
-                     "horPositionsConcentratedAndSorted": "float",
-                     "verBunchId": "long"}
+        test_data = {
+            "acqStamp": "double",
+            "nbOfCapTurns": "long",
+            "horPositionsConcentratedAndSorted": "float",
+            "verBunchId": "long",
+        }
         version, definitions, _, data = _read_header(io.BytesIO(test_head))
         assert version == "SDDS1"
         assert data.mode == "binary"
@@ -131,25 +141,35 @@ class TestReadFunctions:
         # build
         to_check = {
             "Step": {"type": "long", "class": "Parameter"},
-            "SVNVersion": {"type": "string", "class": "Parameter", "description": '"SVN version number"', "fixed_value": "28096M"},
+            "SVNVersion": {
+                "type": "string",
+                "class": "Parameter",
+                "description": '"SVN version number"',
+                "fixed_value": "28096M",
+            },
             "ElementName": {"type": "string", "class": "Column"},
             "s": {"type": "double", "units": "m", "class": "Column"},
             "ElementType": {"type": "string", "class": "Column"},
             "ElementOccurence": {"type": "long", "class": "Column"},
             "deltaPositiveFound": {"type": "short", "class": "Column"},
-            "deltaPositive": {"type": "double", "symbol": '"$gd$R$bpos$n"', "class": "Column"},
+            "deltaPositive": {
+                "type": "double",
+                "symbol": '"$gd$R$bpos$n"',
+                "class": "Column",
+            },
         }
 
         test_head = (
-                "SDDS1\n"
-                "!# little-endian\n"
-                '&description text="Momentum aperture search", contents="momentum aperture", &end\n' +
-                 _header_from_dict(to_check) +
-                "&data mode=binary, &end"
+            "SDDS1\n"
+            "!# little-endian\n"
+            '&description text="Momentum aperture search", contents="momentum aperture", &end\n'
+            + _header_from_dict(to_check)
+            + "&data mode=binary, &end"
         ).encode("ascii")
 
         # read
-        version, definitions, _, data = _read_header(io.BytesIO(test_head))
+        # returns version, definitions, description, data
+        _, definitions, _, _ = _read_header(io.BytesIO(test_head))
 
         # check
         for entry in definitions:
@@ -160,8 +180,7 @@ class TestReadFunctions:
 
 
 def test_def_as_dict():
-    test_str = (b"test1=value1,  test2= value2, \n"
-                b"test3=value3, &end")
+    test_str = b"test1=value1,  test2= value2, \n" b"test3=value3, &end"
     word_gen = _gen_words(io.BytesIO(test_str))
     def_dict = _get_def_as_dict(word_gen)
     assert def_dict["test1"] == "value1"
@@ -198,7 +217,6 @@ class TestAscii:
                 values_equal = all([a == b for a, b in zip(value, new_val)])
             else:
                 values_equal = np.isclose(value, new_val, atol=0.0001).all()
-                print(values_equal)
 
             assert values_equal
 
@@ -209,7 +227,7 @@ class TestAscii:
         self.template_ascii_read_write_read(_sdds_file_lei2, tmp_file)
 
     def test_sdds_write_ascii(self):
-        sdds_file = b'''SDDS1
+        sdds_file = b"""SDDS1
 &array name=arrayOne, type=float, dimensions=1, &end
 &array name=arrayTwo, type=float, dimensions=2, &end
 &data mode=ascii, &end
@@ -219,15 +237,15 @@ class TestAscii:
 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9 8
 7 6 5 4 3
 2 1
-'''
+"""
         sdds_io = io.BytesIO(sdds_file)
-        version, definitions, description, data = _read_header(sdds_io)
+        version, definitions, _, data = _read_header(sdds_io)
         data_list = _read_data(data, definitions, sdds_io, endianness=sys.byteorder)
 
-        assert version == 'SDDS1'
+        assert version == "SDDS1"
         assert len(definitions) == 2
-        assert definitions[0].dimensions == 1
-        assert definitions[1].dimensions == 2
+        assert definitions[0].dimensions == 1  # type: ignore
+        assert definitions[1].dimensions == 2  # type: ignore
 
         assert (data_list[0] == np.arange(10, 0, -1)).all()
 
@@ -242,9 +260,12 @@ class TestClasses:
     def test_duplicated_entries(self):
         with pytest.raises(ValueError) as e:
             SddsFile(
-                version="SDDS1", description=None,
-                definitions_list=[Parameter(name="test", type="int"),
-                                  Parameter(name="test", type="str")],
+                version="SDDS1",
+                description=None,
+                definitions_list=[
+                    Parameter(name="test", type="int"),
+                    Parameter(name="test", type="str"),
+                ],
                 values_list=[1, "hello"],
             )
         assert "Duplicated" in str(e)
@@ -268,8 +289,8 @@ class TestClasses:
         assert "&array" in str(array)
 
         data = Data(mode="binary")
-        assert 'binary' in repr(data)
-        assert 'binary' in str(data)
+        assert "binary" in repr(data)
+        assert "binary" in str(data)
 
         include = Include(filename="myfile")
         assert "Include" in repr(include)
@@ -281,10 +302,10 @@ class TestClasses:
         assert "Description" in str(description)
 
     def test_get_dtype(self):
-        assert '>' in get_dtype_str("float", endianness='big')
-        assert '>' in get_dtype_str("float")  # important for reading
-        assert '<' not in get_dtype_str("float")  # important for reading
-        assert '<' in get_dtype_str("float", endianness='little')
+        assert ">" in get_dtype_str("float", endianness="big")
+        assert ">" in get_dtype_str("float")  # important for reading
+        assert "<" not in get_dtype_str("float")  # important for reading
+        assert "<" in get_dtype_str("float", endianness="little")
         assert "16" in get_dtype_str("string", length=16)
 
         for name, format_ in NUMTYPES.items():
@@ -293,9 +314,10 @@ class TestClasses:
 
 # ----- Helpers ----- #
 
+
 def _write_read_header():
     original = Parameter(name="param1", type="str")
-    encoded = _sdds_def_as_str(original)
+    encoded = _sdds_def_as_str(original).encode("utf-8")
     word_gen = _gen_words(io.BytesIO(encoded))
     def_dict = _get_def_as_dict(word_gen)
     assert def_dict["name"] == original.name
@@ -303,16 +325,20 @@ def _write_read_header():
 
 
 def _header_from_dict(d: Dict[str, Dict[str, str]]) -> str:
-    """ Build a quick header from given dict. """
+    """Build a quick header from given dict."""
     d = {k: v.copy() for k, v in d.items()}
-    return ", &end\n".join(  # join lines
-        f"&{v.pop('class').lower()} name={k}, type={v.pop('type')}" +
-        (", " + ", ".join(f"{vk}={vv}" for vk, vv in v.items()) if v else "")
-        for k, v in d.items()
-    ) + ", &end\n"
+    return (
+        ", &end\n".join(  # join lines
+            f"&{v.pop('class').lower()} name={k}, type={v.pop('type')}"
+            + (", " + ", ".join(f"{vk}={vv}" for vk, vv in v.items()) if v else "")
+            for k, v in d.items()
+        )
+        + ", &end\n"
+    )
 
 
 # ----- Fixtures ----- #
+
 
 @pytest.fixture()
 def _sdds_file_pathlib() -> pathlib.Path:
